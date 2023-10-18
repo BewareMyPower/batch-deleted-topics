@@ -38,9 +38,29 @@ class CurlWrapper {
    public:
     CurlWrapper() noexcept {}
     ~CurlWrapper() {
+        if (headers_) {
+            curl_slist_free_all(headers_);
+        }
         if (handle_) {
             curl_easy_cleanup(handle_);
         }
+    }
+
+    CurlWrapper(const CurlWrapper&) = delete;
+    CurlWrapper& operator=(const CurlWrapper&) = delete;
+
+    CurlWrapper(CurlWrapper&& rhs) noexcept : handle_(rhs.handle_), headers_(rhs.headers_) {
+        rhs.handle_ = nullptr;
+        rhs.headers_ = nullptr;
+    }
+    CurlWrapper& operator=(CurlWrapper&& rhs) noexcept {
+        if (this != &rhs) {
+            handle_ = rhs.handle_;
+            headers_ = rhs.headers_;
+            rhs.handle_ = nullptr;
+            rhs.headers_ = nullptr;
+        }
+        return *this;
     }
 
     char* escape(const std::string& s) const {
@@ -80,25 +100,24 @@ class CurlWrapper {
     };
 
     Result run(const std::string& url, const std::string& header, const Options& options,
-               const TlsContext* tlsContext) const;
+               const TlsContext* tlsContext) {
+        return run(url, header, options, tlsContext, nullptr);
+    }
+
+    // NOTE: if curlm is not null, this method should be called only once.
+    Result run(const std::string& url, const std::string& header, const Options& options,
+               const TlsContext* tlsContext, CURLM* curlm);
+
+    CURL* handle() const noexcept { return handle_; }
 
    private:
-    CURL* handle_;
-
-    struct CurlListGuard {
-        curl_slist*& headers;
-
-        CurlListGuard(curl_slist*& headers) : headers(headers) {}
-        ~CurlListGuard() {
-            if (headers) {
-                curl_slist_free_all(headers);
-            }
-        }
-    };
+    CURL* handle_{nullptr};
+    curl_slist* headers_{nullptr};
 };
 
 inline CurlWrapper::Result CurlWrapper::run(const std::string& url, const std::string& header,
-                                            const Options& options, const TlsContext* tlsContext) const {
+                                            const Options& options, const TlsContext* tlsContext,
+                                            CURLM* curlm) {
     assert(handle_);
     curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
 
@@ -140,13 +159,13 @@ inline CurlWrapper::Result CurlWrapper::run(const std::string& url, const std::s
     curl_easy_setopt(handle_, CURLOPT_MAXREDIRS, options.maxLookupRedirects);
 
     char errorBuffer[CURL_ERROR_SIZE] = "";
-    curl_easy_setopt(handle_, CURLOPT_ERRORBUFFER, errorBuffer);
+    if (!curlm) {
+        curl_easy_setopt(handle_, CURLOPT_ERRORBUFFER, errorBuffer);
+    }
 
-    curl_slist* headers = nullptr;
-    CurlListGuard headersGuard{headers};
     if (!header.empty()) {
-        headers = curl_slist_append(headers, header.c_str());
-        curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, headers);
+        headers_ = curl_slist_append(headers_, header.c_str());
+        curl_easy_setopt(handle_, CURLOPT_HTTPHEADER, headers_);
     }
 
     if (tlsContext) {
@@ -170,6 +189,11 @@ inline CurlWrapper::Result CurlWrapper::run(const std::string& url, const std::s
             curl_easy_setopt(handle_, CURLOPT_SSLCERT, tlsContext->certPath.c_str());
             curl_easy_setopt(handle_, CURLOPT_SSLKEY, tlsContext->keyPath.c_str());
         }
+    }
+
+    if (curlm) {
+        curl_multi_add_handle(curlm, handle_);
+        return Result{CURLE_OK, "", 0L, "", "", ""};
     }
 
     auto res = curl_easy_perform(handle_);

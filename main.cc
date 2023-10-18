@@ -60,13 +60,43 @@ int main(int argc, char* argv[]) {
         return 3;
     }
     std::cout << "There are " << topics.size() << " topics to be delete" << std::endl;
+
+    auto curlm = curl_multi_init();
+    assert(curlm);
+
+    std::vector<CurlWrapper> handles(topics.size());
+    for (auto& handle : handles) {
+        if (!handle.init()) {
+            std::cerr << "Failed to init curl" << std::endl;
+            return 2;
+        }
+    }
     CurlWrapper::Options options;
     options.method = "DELETE";
-    for (const auto& topic : topics) {
-        auto url = base_url + "/" + stripTopic(topic) + "/partitions";
-        curl.run(url, header, options, nullptr);
-        std::cout << topic << " is deleted" << std::endl;
+    for (size_t i = 0; i < topics.size(); i++) {
+        auto url = base_url + "/" + stripTopic(topics[i]) + "/partitions";
+        handles[i].run(url, header, options, nullptr, curlm);
     }
 
+    int running_handles = 0;
+    do {
+        CURLMcode code = curl_multi_perform(curlm, &running_handles);
+        std::cout << "running_handles: " << running_handles << std::endl;
+        if (code == CURLM_OK) {
+            int ret;
+            code = curl_multi_poll(curlm, nullptr, 0, 5000, &ret);
+            std::cout << "code: " << code << ", ret: " << ret << std::endl;
+        }
+        if (code != CURLM_OK) {
+            std::cerr << "curl_multi failed: " << code << std::endl;
+            break;
+        }
+    } while (running_handles > 0);
+    for (const auto& handle : handles) {
+        curl_multi_remove_handle(curlm, handle.handle());
+    }
+
+    handles.clear();
+    curl_multi_cleanup(curlm);
     return 0;
 }
