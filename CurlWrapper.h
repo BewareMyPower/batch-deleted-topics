@@ -107,6 +107,10 @@ inline CurlWrapper::Result CurlWrapper::run(const std::string& url, const std::s
         curl_easy_setopt(handle_, CURLOPT_POSTFIELDS, options.postFields.c_str());
     }
 
+    if (!options.method.empty()) {
+        curl_easy_setopt(handle_, CURLOPT_CUSTOMREQUEST, options.method.c_str());
+    }
+
     // Write response
     curl_easy_setopt(
         handle_, CURLOPT_WRITEFUNCTION,
