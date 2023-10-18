@@ -44,27 +44,28 @@ int main(int argc, char* argv[]) {
     std::string header = "Authorization: Bearer " + token;
     std::vector<std::string> topics;
     if (auto result = curl.run(base_url, header, {}, nullptr); result.error.empty()) {
-        auto topicsJson = json::parse(result.responseData);
-        if (!topicsJson.is_array()) {
-            std::cerr << "Unexpected topic list JSON: " << topicsJson.dump(4) << std::endl;
+        auto topics_json = json::parse(result.responseData);
+        if (!topics_json.is_array()) {
+            std::cerr << "Unexpected topic list JSON: " << topics_json.dump(4) << std::endl;
             return 3;
         }
-        topics.reserve(topicsJson.size());
-        for (auto&& topic : topicsJson) {
-            topics.emplace_back(std::move(topic.get<std::string>()));
+        for (const auto& topic_json : topics_json) {
+            auto topic_str = topic_json.get<std::string>();
+            if (topic_str.find("test-topic") != std::string::npos) {
+                topics.emplace_back(std::move(topic_str));
+            }
         }
     } else {
         std::cerr << "Failed to get list: " << result.error << std::endl;
         return 3;
     }
+    std::cout << "There are " << topics.size() << " topics to be delete" << std::endl;
     CurlWrapper::Options options;
     options.method = "DELETE";
     for (const auto& topic : topics) {
-        if (topic.find("test-topic") != std::string::npos) {
-            auto url = base_url + "/" + stripTopic(topic) + "/partitions";
-            curl.run(url, header, options, nullptr);
-            std::cout << topic << " is deleted" << std::endl;
-        }
+        auto url = base_url + "/" + stripTopic(topic) + "/partitions";
+        curl.run(url, header, options, nullptr);
+        std::cout << topic << " is deleted" << std::endl;
     }
 
     return 0;
