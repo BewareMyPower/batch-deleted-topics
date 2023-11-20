@@ -178,8 +178,13 @@ inline CurlWrapper::Result CurlWrapper::run(const std::string& url, const std::s
     Result result{res, response, responseCode, "", "", std::string(errorBuffer)};
     if (responseCode == 307 || responseCode == 302 || responseCode == 301) {
         char* url;
-        curl_easy_getinfo(handle_, CURLINFO_REDIRECT_URL, &url);
-        result.redirectUrl = url;
+        auto code = curl_easy_getinfo(handle_, CURLINFO_REDIRECT_URL, &url);
+        if (url) {
+            result.redirectUrl = url;
+        } else {
+            result.code = code;
+            result.error = "Redirect URL is empty";
+        }
     }
     return result;
 }

@@ -64,8 +64,13 @@ int main(int argc, char* argv[]) {
     options.method = "DELETE";
     for (const auto& topic : topics) {
         auto url = base_url + "/" + stripTopic(topic) + "/partitions";
-        curl.run(url, header, options, nullptr);
-        std::cout << topic << " is deleted" << std::endl;
+        auto result = curl.run(url, header, options, nullptr);
+        if (result.code == CURLE_OK && result.error.empty() && result.serverError.empty()) {
+            std::cout << topic << " is deleted" << std::endl;
+        } else {
+            std::cerr << "Failed to delete " << topic << ": " << result.code << ", error: " << result.error
+                      << ", serverError: " << result.serverError << std::endl;
+        }
     }
 
     return 0;
